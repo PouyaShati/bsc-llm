@@ -36,7 +36,9 @@ Output:
 - LLM-only output:
 
 Person 1: leftover pizza, celery
+
 Person 2: soup, nuts
+
 Person 3: expensive chocolate, ice cream, egg
 
 Observation: We can see that the LLM fails to include two items in the division, violating a strict requirement of the problem due to its myopic reasoning.
@@ -46,7 +48,9 @@ Observation: We can see that the LLM fails to include two items in the division,
 - CSP-only output:
 
 Person 1: leftover pizza, celery, blue cheese
+
 Person 2: soup, ice cream, nuts
+
 Person 3: egg, milk, expensive chocolate
 
 Observation: The CSP approach satisfies the requirement but obviously fails to consider common sense or any additional instructions given.
@@ -56,13 +60,19 @@ Observation: The CSP approach satisfies the requirement but obviously fails to c
 - Beam Search with Cuts output:
 
 Solution 1:
+
 Person 1: expensive chocolate, nuts, leftover pizza
+
 Person 2: egg, soup, celery, blue cheese
+
 Person 3: milk, ice cream
 
 Solution 2:
+
 Person 1: soup, expensive chocolate, celery
+
 Person 2: leftover pizza, blue cheese, ice cream
+
 Person 3: egg, nuts, milk
 
 Observation: We can that both solutions are common sense and follow instructions, in addition to satisfy the strict requirements of the problem.
@@ -70,7 +80,9 @@ Observation: We can that both solutions are common sense and follow instructions
 Procedure: LLM is asked to provide the solution piece by piece. A number of partial solutions are generated and maintained at each iteration. Solutions that are not capable to be extended to complete feasible solutions are cut. Some of the example cut partial solutions are as follows:
 
 Cut partial solution 1: Person 1 (leftover pizza, soup, blue cheese, ...
+
 Cut partial solution 2: Person 1 (celery, leftover pizza)
+
 Cut partial solution 3: Person 1 (celery, blue cheese, leftover pizza) - Person 2 (soup, egg, ice cream, ...
 
 The above solutions are cut because capacity is exceeded, the first group is closed off prematurely, and the required composition to fit the remaining items is violated, respectively.
