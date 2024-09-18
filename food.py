@@ -26,7 +26,7 @@ if mode == "load":
         l+=2
       elif lines[l] == "CONSIDERATION":
         consideration = lines[l+1]
-        l+=2 
+        l+=2
       elif lines[l] == "ITEMS":
         items = []
         l += 1
@@ -40,8 +40,8 @@ if mode == "load":
         while lines[l] != "NO MORE":
           item_weights.append(int(lines[l]))
           l += 1
-        l += 1      
-elif mode == "manual":           
+        l += 1
+elif mode == "manual":
   num_persons = int(input("Enter the number of persons: \n"))
   person_cap = int(input("Enter the max weight limit of the food assigned to each person: \n"))
   items = []
@@ -54,8 +54,8 @@ elif mode == "manual":
 
 
 
-def solveBin(partial_solution, num_persons, person_cap, items, item_weights):
-  model = gp.Model () 
+def solveBin(partial_solution, num_persons, person_cap, items, item_weights, to_print = False):
+  model = gp.Model ()
   model.Params.LogToConsole = 0
   x = model.addVars(len(items), num_persons, vtype=GRB.BINARY)
   model.addConstrs(gp.quicksum(x[i,j] for j in range(num_persons)) == 1 for i in range(len(items)))
@@ -73,13 +73,21 @@ def solveBin(partial_solution, num_persons, person_cap, items, item_weights):
     unassigned_items.remove(par)
 
   model.addConstrs(x[items.index(item),j] == 0 for item in unassigned_items for j in closed_persons)
-  
+
   model.setParam('TimeLimit', 10)
   model.setParam('MIPFocus', 1)
   model.optimize()
 
   if model.status in {gp.GRB.OPTIMAL, gp.GRB.SUBOPTIMAL}:
     # print("Model feasible")
+    if to_print:
+      for j in range(num_persons):
+        print(f"Person {j+1}")
+        temp = ""
+        for i in range(len(items)):
+          if x[i, j].X > 0.5:
+            temp = temp + "-" + items[i] + " "
+        print(temp)
     return True
   elif model.status == gp.GRB.INFEASIBLE:
     # print("Model infeasible")
@@ -87,6 +95,27 @@ def solveBin(partial_solution, num_persons, person_cap, items, item_weights):
   else:
     # print("timeout or unknown")
     return False
+
+
+def find_partial(par, par_list):
+  par_set= [set()]
+  for item in par:
+    if item == "end":
+      par_set.append(set())
+    else:
+      par_set[-1].add(item)
+  # print(par_set)
+  for other_par in par_list:
+    other_par_set = [set()]
+    for item in other_par:
+      if item == "end":
+        other_par_set.append(set())
+      else:
+        other_par_set[-1].add(item)
+    if par_set == other_par_set:
+      return True
+  return False        
+
 
 
 
@@ -102,15 +131,41 @@ client = openai.OpenAI(
 )
 
 
-init_prompt = f"""I'll give you a list of food items and their weights. Divide them between {num_persons} persons to eat in one sitting, what each person eats in total should not exceed {person_cap} grams.
-            
+init_prompt_base = f"""I'll give you a list of food items and their weights. Divide them between {num_persons} persons to eat in one sitting, what each person eats in total should not exceed {person_cap} grams.
+
 Make sure the combination of food items that each person eats make sense, so that the person will not be hungry or sick at the end. {consideration}.
 
 The list:
-{items_string}
+{items_string}"""
 
-Start by telling me what is the first item that person 1 should eat. Just say the name of the item and nothing else."""
+init_prompt = init_prompt_base + "\n\nStart by telling me what is the first item that person 1 should eat. Just say the name of the item and nothing else."
 
+chat_completion = client.chat.completions.create(
+        messages=[
+        {
+            "role": "user",
+            "content": init_prompt_base + "\n\nJust give the solution by listing the name of the items that each person eats. Don't say anything else.",
+        }
+        ],
+        #model="gpt-3.5-turbo",
+        model="gpt-4o",
+        #temperature = 1.5,
+        #n = 5,
+      )
+
+
+
+
+print("LLM-only solutions:")
+for i in range(len(chat_completion.choices)):
+  print(chat_completion.choices[i].message.content)
+  print("===========================")
+
+
+
+print("Bin Packing-only solution:")
+solveBin([], num_persons, person_cap, items, item_weights, to_print = True)
+print("===========================")
 
 
 my_messages = []
@@ -162,16 +217,16 @@ while cnt<len(items)+num_persons+1 and len(my_messages) > 0:
           break
       if "end" in res:
         res = "end"
-        found = True  
+        found = True
       if not found:
         continue
       if res != "end" and res in par_candidate:
-        continue      
+        continue
       par_candidate.append(res)
       # print("considering", par_candidate)
-      if par_candidate in partial_solutions_candidates:
+      if find_partial(par_candidate, partial_solutions_candidates):
         continue
-      print("Considering partial solution:", par_candidate)  
+      print("Considering partial solution:", par_candidate)
       feas = solveBin(par_candidate, num_persons, person_cap, items, item_weights)
       print("Feasible?", feas)
       if feas:
@@ -180,13 +235,15 @@ while cnt<len(items)+num_persons+1 and len(my_messages) > 0:
           if par_candidate not in complete_solutions:
             print("Feasible complete solution finalized.")
             complete_solutions.append(par_candidate)
+          else:
+            print("Feasible complete solution already found.")  
           continue
 
         mes_candidate.append({"role": "assistant", "content": res})
         if res == "end":
-          mes = f"Now move on to person {persons_used+1}, tell me the first item that person {persons_used+1} should eat. Just say the name of the item and nothing else." 
+          mes = f"Now move on to person {persons_used+1}, tell me the first item that person {persons_used+1} should eat. Just say the name of the item and nothing else."
         else:
-          mes = f"Give me 1 more item that person {persons_used+1} should eat. Just say the name of the item and nothing else. Say \"end\" if you want to close off the list for items that person {persons_used+1} should eat. But make sure that the sum of the weights for this person is close to {person_cap} grams, so that the person is not left hungry."  
+          mes = f"Give me 1 more item that person {persons_used+1} should eat. Just say the name of the item and nothing else. Say \"end\" if you want to close off the list for items that person {persons_used+1} should eat. But make sure that the sum of the weights for this person is close to {person_cap} grams, so that the person is not left hungry."
         mes_candidate.append({"role": "user", "content": mes})
 
         my_messages_candidates.append(mes_candidate)
